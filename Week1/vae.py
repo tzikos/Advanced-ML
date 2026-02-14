@@ -153,6 +153,19 @@ def main():
 
     args = parser.parse_args()
 
+    # Build prefix from architecture choices
+    prefix = f"{args.prior}_{args.decoder}"
+    if args.decoder == 'gaussian':
+        prefix += '_learnvar' if args.learn_variance else f'_fixvar{args.fixed_variance}'
+    if args.prior == 'mog':
+        prefix += f'_K{args.mixture_components}'
+
+    # Prefix output filenames
+    for attr in ['model', 'samples', 'latent_plot']:
+        path = getattr(args, attr)
+        d, name = os.path.split(path)
+        setattr(args, attr, os.path.join(d, f"{prefix}_{name}"))
+
     # Print options
     print('# Options')
     for key, value in sorted(vars(args).items()):

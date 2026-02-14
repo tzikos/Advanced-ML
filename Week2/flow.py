@@ -67,8 +67,8 @@ class MaskedCouplingLayer(nn.Module):
         sum_log_det_J: [torch.Tensor]
             The sum of the log determinants of the Jacobian matrices of the forward transformations of dimension `(batch_size, feature_dim)`.
         """
-        x = z
-        log_det_J = torch.zeros(z.shape[0])
+        x = self.mask * z + (1 - self.mask) * (z * torch.exp(self.scale_net(self.mask * z)) + self.translation_net(self.mask * z))
+        log_det_J = torch.sum((1 - self.mask) * self.scale_net(self.mask * z), dim=-1)
         return x, log_det_J
     
     def inverse(self, x):
@@ -84,8 +84,8 @@ class MaskedCouplingLayer(nn.Module):
         sum_log_det_J: [torch.Tensor]
             The sum of the log determinants of the Jacobian matrices of the inverse transformations.
         """
-        z = x
-        log_det_J = torch.zeros(x.shape[0])
+        z = self.mask * x + (1 - self.mask) * ((x - self.translation_net(self.mask * x)) * torch.exp(-self.scale_net(self.mask * x)))
+        log_det_J = torch.sum((1 - self.mask) * -self.scale_net(self.mask * x), dim=-1)
         return z, log_det_J
 
 
@@ -231,44 +231,94 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', type=str, default='train', choices=['train', 'sample'], help='what to do when running the script (default: %(default)s)')
-    parser.add_argument('--data', type=str, default='tg', choices=['tg', 'cb'], help='toy dataset to use {tg: two Gaussians, cb: chequerboard} (default: %(default)s)')
-    parser.add_argument('--model', type=str, default='model.pt', help='file to save model to or load model from (default: %(default)s)')
-    parser.add_argument('--samples', type=str, default='samples.png', help='file to save samples in (default: %(default)s)')
+    parser.add_argument('--data', type=str, default='tg', choices=['tg', 'cb', 'mnist'], help='dataset to use {tg: two Gaussians, cb: chequerboard, mnist: dequantized MNIST} (default: %(default)s)')
+    parser.add_argument('--model', type=str, default='outputs/models/model.pt', help='file to save model to or load model from (default: %(default)s)')
+    parser.add_argument('--samples', type=str, default='outputs/images/samples.png', help='file to save samples in (default: %(default)s)')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'], help='torch device (default: %(default)s)')
     parser.add_argument('--batch-size', type=int, default=10000, metavar='N', help='batch size for training (default: %(default)s)')
     parser.add_argument('--epochs', type=int, default=1, metavar='N', help='number of epochs to train (default: %(default)s)')
     parser.add_argument('--lr', type=float, default=1e-3, metavar='V', help='learning rate for training (default: %(default)s)')
+    parser.add_argument('--mask', type=str, default='half', choices=['half', 'random', 'chequerboard'], help='masking strategy for coupling layers (default: %(default)s)')
 
     args = parser.parse_args()
+
+    # Prefix output paths with data and mask choices
+    import os
+    prefix = f"{args.data}_{args.mask}"
+    for attr in ['model', 'samples']:
+        path = getattr(args, attr)
+        d, name = os.path.split(path)
+        setattr(args, attr, os.path.join(d, f"{prefix}_{name}"))
+
     print('# Options')
     for key, value in sorted(vars(args).items()):
         print(key, '=', value)
 
-    # Generate the data
-    n_data = 10000000
-    toy = {'tg': ToyData.TwoGaussians, 'cb': ToyData.Chequerboard}[args.data]()
-    train_loader = torch.utils.data.DataLoader(toy().sample((n_data,)), batch_size=args.batch_size, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(toy().sample((n_data,)), batch_size=args.batch_size, shuffle=True)
+    # Load data
+    is_mnist = (args.data == 'mnist')
+    toy = None
+
+    if is_mnist:
+        mnist_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Lambda(lambda x: x + torch.rand(x.shape) / 255),
+            transforms.Lambda(lambda x: x.flatten())
+        ])
+        train_loader = torch.utils.data.DataLoader(
+            datasets.MNIST('data/', train=True, download=True, transform=mnist_transform),
+            batch_size=args.batch_size, shuffle=True
+        )
+        D = 784
+    else:
+        n_data = 10000000
+        toy = {'tg': ToyData.TwoGaussians, 'cb': ToyData.Chequerboard}[args.data]()
+        train_loader = torch.utils.data.DataLoader(
+            toy().sample((n_data,)), batch_size=args.batch_size, shuffle=True
+        )
+        D = next(iter(train_loader)).shape[1]
 
     # Define prior distribution
-    D = next(iter(train_loader)).shape[1]
     base = GaussianBase(D)
 
-    # Define transformations
-    transformations =[]
-    mask = torch.Tensor([1 if (i+j) % 2 == 0 else 0 for i in range(28) for j in range(28)])
-    
-    num_transformations = 5
-    num_hidden = 8
+    # Define masking strategy
+    if args.mask == 'chequerboard':
+        mask = torch.Tensor([1 if (i + j) % 2 == 0 else 0 for i in range(28) for j in range(28)])
+        if D != 784:
+            # Fall back to half mask for non-image data
+            mask = torch.zeros((D,))
+            mask[D//2:] = 1
+    elif args.mask == 'random':
+        mask = (torch.rand(D) > 0.5).float()
+    else:  # half
+        mask = torch.zeros((D,))
+        mask[D//2:] = 1
 
-    # Make a mask that is 1 for the first half of the features and 0 for the second half
-    mask = torch.zeros((D,))
-    mask[D//2:] = 1
-    
+    # Define transformations
+    num_transformations = 10 if is_mnist else 5
+    num_hidden = 256 if is_mnist else 8
+
+    transformations = []
     for i in range(num_transformations):
-        mask = (1-mask) # Flip the mask
-        scale_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
-        translation_net = nn.Sequential(nn.Linear(D, num_hidden), nn.ReLU(), nn.Linear(num_hidden, D))
+        mask = (1 - mask)  # Flip the mask
+        if is_mnist:
+            scale_net = nn.Sequential(
+                nn.Linear(D, num_hidden), nn.ReLU(),
+                nn.Linear(num_hidden, num_hidden), nn.ReLU(),
+                nn.Linear(num_hidden, D), nn.Tanh()
+            )
+        else:
+            scale_net = nn.Sequential(
+                nn.Linear(D, num_hidden), nn.ReLU(),
+                nn.Linear(num_hidden, D)
+            )
+        translation_net = nn.Sequential(
+            nn.Linear(D, num_hidden), nn.ReLU(),
+            nn.Linear(num_hidden, num_hidden), nn.ReLU(),
+            nn.Linear(num_hidden, D)
+        ) if is_mnist else nn.Sequential(
+            nn.Linear(D, num_hidden), nn.ReLU(),
+            nn.Linear(num_hidden, D)
+        )
         transformations.append(MaskedCouplingLayer(scale_net, translation_net, mask))
 
     # Define flow model
@@ -279,10 +329,25 @@ if __name__ == "__main__":
         # Define optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
+        # For MNIST, data_loader yields (x, label) tuples; wrap to yield just x
+        if is_mnist:
+            class MNISTLoader:
+                def __init__(self, loader):
+                    self.loader = loader
+                def __iter__(self):
+                    for x, _ in self.loader:
+                        yield x
+                def __len__(self):
+                    return len(self.loader)
+            train_loader_wrapped = MNISTLoader(train_loader)
+        else:
+            train_loader_wrapped = train_loader
+
         # Train model
-        train(model, optimizer, train_loader, args.epochs, args.device)
+        train(model, optimizer, train_loader_wrapped, args.epochs, args.device)
 
         # Save model
+        os.makedirs(os.path.dirname(args.model), exist_ok=True)
         torch.save(model.state_dict(), args.model)
 
     elif args.mode == 'sample':
@@ -293,19 +358,28 @@ if __name__ == "__main__":
 
         # Generate samples
         model.eval()
-        with torch.no_grad():
-            samples = (model.sample((10000,))).cpu() 
+        os.makedirs(os.path.dirname(args.samples), exist_ok=True)
 
-        # Plot the density of the toy data and the model samples
-        coordinates = [[[x,y] for x in np.linspace(*toy.xlim, 1000)] for y in np.linspace(*toy.ylim, 1000)]
-        prob = torch.exp(toy().log_prob(torch.tensor(coordinates)))
+        if is_mnist:
+            with torch.no_grad():
+                samples = model.sample((64,)).cpu()
+                samples = torch.clamp(samples, 0, 1)
+                save_image(samples.view(64, 1, 28, 28), args.samples)
+                print(f"MNIST samples saved to {args.samples}")
+        else:
+            with torch.no_grad():
+                samples = (model.sample((10000,))).cpu()
 
-        fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-        im = ax.imshow(prob, extent=[toy.xlim[0], toy.xlim[1], toy.ylim[0], toy.ylim[1]], origin='lower', cmap='YlOrRd')
-        ax.scatter(samples[:, 0], samples[:, 1], s=1, c='black', alpha=0.5)
-        ax.set_xlim(toy.xlim)
-        ax.set_ylim(toy.ylim)
-        ax.set_aspect('equal')
-        fig.colorbar(im)
-        plt.savefig(args.samples)
-        plt.close()
+            # Plot the density of the toy data and the model samples
+            coordinates = [[[x,y] for x in np.linspace(*toy.xlim, 1000)] for y in np.linspace(*toy.ylim, 1000)]
+            prob = torch.exp(toy().log_prob(torch.tensor(coordinates)))
+
+            fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+            im = ax.imshow(prob, extent=[toy.xlim[0], toy.xlim[1], toy.ylim[0], toy.ylim[1]], origin='lower', cmap='YlOrRd')
+            ax.scatter(samples[:, 0], samples[:, 1], s=1, c='black', alpha=0.5)
+            ax.set_xlim(toy.xlim)
+            ax.set_ylim(toy.ylim)
+            ax.set_aspect('equal')
+            fig.colorbar(im)
+            plt.savefig(args.samples)
+            plt.close()
