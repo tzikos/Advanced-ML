@@ -15,6 +15,40 @@ import numpy as np
 
 
 # =============================================================================
+# Flow components (for FlowPrior)
+# =============================================================================
+
+class MaskedCouplingLayer(nn.Module):
+    """An affine coupling layer for a normalizing flow."""
+
+    def __init__(self, scale_net, translation_net, mask):
+        super(MaskedCouplingLayer, self).__init__()
+        self.scale_net = scale_net
+        self.translation_net = translation_net
+        self.mask = nn.Parameter(mask, requires_grad=False)
+
+    def forward(self, z):
+        x = self.mask * z + (1 - self.mask) * (
+            z * torch.exp(self.scale_net(self.mask * z))
+            + self.translation_net(self.mask * z)
+        )
+        log_det_J = torch.sum(
+            (1 - self.mask) * self.scale_net(self.mask * z), dim=-1
+        )
+        return x, log_det_J
+
+    def inverse(self, x):
+        z = self.mask * x + (1 - self.mask) * (
+            (x - self.translation_net(self.mask * x))
+            * torch.exp(-self.scale_net(self.mask * x))
+        )
+        log_det_J = torch.sum(
+            (1 - self.mask) * -self.scale_net(self.mask * x), dim=-1
+        )
+        return z, log_det_J
+
+
+# =============================================================================
 # Priors
 # =============================================================================
 
@@ -76,6 +110,90 @@ class MixtureOfGaussiansPrior(nn.Module):
         mix = td.Categorical(logits=self.mixture_logits)
         comp = td.Independent(td.Normal(loc=self.means, scale=torch.exp(self.log_stds)), 1)
         return td.MixtureSameFamily(mix, comp)
+
+
+class FlowPrior(nn.Module):
+    """
+    A normalizing flow prior for the VAE latent space.
+
+    Wraps a Gaussian base distribution and a sequence of masked coupling layers.
+    Returns a distribution-like object that supports log_prob() and sample().
+    """
+    def __init__(self, M, num_flows=10, num_hidden=128):
+        """
+        Parameters:
+        M: [int] Dimension of the latent space.
+        num_flows: [int] Number of coupling layers.
+        num_hidden: [int] Hidden units in scale/translation networks.
+        """
+        super(FlowPrior, self).__init__()
+        self.M = M
+        self.base_mean = nn.Parameter(torch.zeros(M), requires_grad=False)
+        self.base_std = nn.Parameter(torch.ones(M), requires_grad=False)
+
+        # Build coupling layers with alternating masks
+        mask = torch.zeros(M)
+        mask[M // 2:] = 1
+        transformations = []
+        for i in range(num_flows):
+            mask = 1 - mask  # flip mask each layer
+            scale_net = nn.Sequential(
+                nn.Linear(M, num_hidden), nn.ReLU(),
+                nn.Linear(num_hidden, num_hidden), nn.ReLU(),
+                nn.Linear(num_hidden, M), nn.Tanh(),
+            )
+            translation_net = nn.Sequential(
+                nn.Linear(M, num_hidden), nn.ReLU(),
+                nn.Linear(num_hidden, num_hidden), nn.ReLU(),
+                nn.Linear(num_hidden, M),
+            )
+            transformations.append(MaskedCouplingLayer(scale_net, translation_net, mask))
+
+        self.transformations = nn.ModuleList(transformations)
+
+    def _base(self):
+        return td.Independent(td.Normal(loc=self.base_mean, scale=self.base_std), 1)
+
+    def _forward(self, z):
+        """Transform from base to latent (forward through flow)."""
+        sum_log_det_J = 0
+        for T in self.transformations:
+            z, log_det_J = T(z)
+            sum_log_det_J += log_det_J
+        return z, sum_log_det_J
+
+    def _inverse(self, x):
+        """Transform from latent to base (inverse through flow)."""
+        sum_log_det_J = 0
+        for T in reversed(self.transformations):
+            x, log_det_J = T.inverse(x)
+            sum_log_det_J += log_det_J
+        return x, sum_log_det_J
+
+    def forward(self):
+        """
+        Return a distribution-like object with log_prob and sample methods.
+        Uses the same interface as GaussianPrior / MoG so the VAE can call
+        prior().log_prob(z) and prior().sample(...).
+        """
+        return _FlowDistribution(self)
+
+
+class _FlowDistribution:
+    """Wraps a FlowPrior to look like a torch.distributions.Distribution."""
+    def __init__(self, flow_prior):
+        self.flow_prior = flow_prior
+
+    def log_prob(self, z):
+        """log p(z) = log p_base(f^{-1}(z)) + log |det df^{-1}/dz|"""
+        z_base, log_det_J = self.flow_prior._inverse(z)
+        return self.flow_prior._base().log_prob(z_base) + log_det_J
+
+    def sample(self, sample_shape=torch.Size()):
+        """Sample z ~ flow prior by sampling from base and transforming."""
+        z_base = self.flow_prior._base().sample(sample_shape)
+        z, _ = self.flow_prior._forward(z_base)
+        return z
 
 
 # =============================================================================
@@ -228,11 +346,11 @@ class VAE(nn.Module):
 
         log_p_x_given_z = self.decoder(z).log_prob(x)
 
-        # Try analytic KL; fall back to MC estimate for non-standard priors (e.g. MoG)
+        # Try analytic KL; fall back to MC estimate for non-standard priors (e.g. MoG, Flow)
         try:
             kl = td.kl_divergence(q, self.prior())
             elbo = torch.mean(log_p_x_given_z - kl, dim=0)
-        except NotImplementedError:
+        except (NotImplementedError, TypeError):
             log_p_z = self.prior().log_prob(z)
             log_q_z_given_x = q.log_prob(z)
             elbo = torch.mean(log_p_x_given_z + log_p_z - log_q_z_given_x, dim=0)

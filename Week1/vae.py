@@ -12,7 +12,7 @@ from torchvision.utils import save_image
 import argparse
 
 from helpers import (
-    GaussianPrior, MixtureOfGaussiansPrior,
+    GaussianPrior, MixtureOfGaussiansPrior, FlowPrior,
     GaussianEncoder,
     BernoulliDecoder, GaussianDecoder,
     VAE,
@@ -59,6 +59,8 @@ def build_model(args):
         prior = GaussianPrior(M)
     elif args.prior == 'mog':
         prior = MixtureOfGaussiansPrior(M, K=args.mixture_components)
+    elif args.prior == 'flow':
+        prior = FlowPrior(M, num_flows=args.flow_layers, num_hidden=args.flow_hidden)
 
     # --- Encoder (always Gaussian) ---
     encoder_net = nn.Sequential(
@@ -116,7 +118,7 @@ def main():
 
     # Architecture
     parser.add_argument('--prior', type=str, default='gaussian',
-                        choices=['gaussian', 'mog'],
+                        choices=['gaussian', 'mog', 'flow'],
                         help='prior distribution (default: %(default)s)')
     parser.add_argument('--decoder', type=str, default='bernoulli',
                         choices=['bernoulli', 'gaussian'],
@@ -145,6 +147,12 @@ def main():
     parser.add_argument('--mixture-components', type=int, default=10, metavar='K',
                         help='number of mixture components for MoG prior (default: %(default)s)')
 
+    # Flow prior-specific
+    parser.add_argument('--flow-layers', type=int, default=10, metavar='L',
+                        help='number of coupling layers for flow prior (default: %(default)s)')
+    parser.add_argument('--flow-hidden', type=int, default=128, metavar='H',
+                        help='hidden units in flow networks (default: %(default)s)')
+
     # Gaussian decoder-specific
     parser.add_argument('--learn-variance', action='store_true',
                         help='learn per-pixel variance (only for gaussian decoder)')
@@ -159,6 +167,8 @@ def main():
         prefix += '_learnvar' if args.learn_variance else f'_fixvar{args.fixed_variance}'
     if args.prior == 'mog':
         prefix += f'_K{args.mixture_components}'
+    if args.prior == 'flow':
+        prefix += f'_L{args.flow_layers}'
 
     # Prefix output filenames
     for attr in ['model', 'samples', 'latent_plot']:
