@@ -1,0 +1,3 @@
+[submodule "Projects/Advanced-ML-Projects"]
+	path = Projects/Advanced-ML-Projects
+	url = https://github.com/tzikos/Advanced-ML-Projects.git
