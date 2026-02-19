@@ -1,3 +1,9 @@
-[submodule "Projects/Advanced-ML-Projects"]
-	path = Projects/Advanced-ML-Projects
-	url = https://github.com/tzikos/Advanced-ML-Projects.git
+[submodule "Projects/Advanced-ML-Generative-Modeling"]
+	path = Projects/Advanced-ML-Generative-Modeling
+	url = https://github.com/tzikos/Advanced-ML-Generative-Modeling.git
+[submodule "Projects/Advanced-ML-Representation-Theory"]
+	path = Projects/Advanced-ML-Representation-Theory
+	url = https://github.com/tzikos/Advanced-ML-Representation-Theory.git
+[submodule "Projects/Advanced-ML-Graph-NNs"]
+	path = Projects/Advanced-ML-Graph-NNs
+	url = https://github.com/tzikos/Advanced-ML-Graph-NNs.git
