@@ -1,8 +1,8 @@
 [submodule "Projects/Generative-Modeling"]
 	path = Projects/Generative-Modeling
 	url = https://github.com/tzikos/Generative-Modeling.git
-[submodule "Projects/Representation-Theory"]
-	path = Projects/Representation-Theory
+[submodule "Projects/Representation-Learning"]
+	path = Projects/Representation-Learning
 	url = https://github.com/tzikos/Representation-Theory.git
 [submodule "Projects/Graph-NNs"]
 	path = Projects/Graph-NNs
