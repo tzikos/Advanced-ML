@@ -3,7 +3,7 @@
 	url = https://github.com/tzikos/Generative-Modeling.git
 [submodule "Projects/Representation-Learning"]
 	path = Projects/Representation-Learning
-	url = https://github.com/tzikos/Representation-Theory.git
+	url = https://github.com/tzikos/Representation-Learning.git
 [submodule "Projects/Graph-NNs"]
 	path = Projects/Graph-NNs
 	url = https://github.com/tzikos/Graph-NNs.git
