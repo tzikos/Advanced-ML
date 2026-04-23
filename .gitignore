@@ -1,5 +1,5 @@
 .venv
 __pycache__/
 *.pt
-data/MNIST/raw/*
+data/
 *.pt

@@ -1,0 +1,22 @@
+{
+  "best_trial_number": 154,
+  "best_trial_value": 0.35245683789253235,
+  "best_params": {
+    "state_dim": 8,
+    "num_message_passing_rounds": 6,
+    "update_type": "residual_mlp",
+    "dropout": 0.0006267789337586352,
+    "lr": 0.02108734382983236,
+    "weight_decay": 0.003393961523269064,
+    "scheduler_eta_min_ratio": 0.00025994118684551115,
+    "epochs": 466
+  },
+  "scheduler": "CosineAnnealingLR",
+  "retrained_validation_loss": 0.386442095041275,
+  "plot_paths": {
+    "loss_plot": "Week10/outputs/best_hparams_loss.png",
+    "accuracy_plot": "Week10/outputs/best_hparams_accuracy.png"
+  },
+  "test_predictions_path": "test_predictions.pt",
+  "note": "No test set used during tuning or final retrain."
+}
