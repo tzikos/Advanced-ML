@@ -1,0 +1,147 @@
+\documentclass[12pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, bm}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{parskip}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+
+\titlespacing*{\section}{0pt}{16pt}{6pt}
+
+\begin{document}
+
+\section*{Week 1: Deep Latent Variable Models (DLVMs)}
+
+\textbf{Generative Models:} The decoder $f_\theta: \mathcal{Z} \to \mathcal{H}$ transforms latent representations into parameters of the output density $\eta = f_\theta(\bm{z})$. Output densities depend on data type (e.g., Categorical for images, Gaussian for continuous data).
+
+\textbf{VAEs \& ELBO:} Models are learned via amortized variational inference by optimizing the Evidence Lower Bound:
+\[
+\mathcal{L}(\theta, \phi) = \mathbb{E}_{\bm{z}\sim q_\phi(\bm{z}|\bm{x})}[\log p_\theta(\bm{x}|\bm{z})] - KL(q_\phi(\bm{z}|\bm{x}) \,||\, p(\bm{z}))
+\]
+
+\textbf{Priors \& Posterior Collapse:} The standard Gaussian prior can cause posterior collapse. Better priors include Mixture of Gaussians (MoG) or VampPrior, a mixture of approximate posteriors:
+\[
+p_\lambda(\bm{z}) = \frac{1}{K}\sum_{k=1}^{K} q_\phi(\bm{z}|\bm{u}_k)
+\]
+Shared decoders in hierarchical VAEs also help prevent posterior collapse.
+
+\section*{Week 2: Normalizing Flows}
+
+\textbf{Concept:} A sequence of invertible, differentiable transformations (diffeomorphisms) maps from a base distribution such as $\mathcal{N}(0, \bm{I})$:
+\[
+\bm{x} = T(\bm{u}) = T_K \circ \dots \circ T_1(\bm{u})
+\]
+
+\textbf{Exact Likelihood:} Density is computed using the change of variables formula:
+\[
+p_x(\bm{x}) = p_u(\bm{u}) \,|\det J_T(\bm{u})|^{-1}
+\]
+
+\textbf{Dequantization:} To apply continuous flows to discrete data, uniform noise is added: $\bm{x}' = \bm{x} + \bm{u}$, where $\bm{u} \sim \mathcal{U}(-0.5, 0.5)$.
+
+\textbf{Affine Coupling (RealNVP):} Partitions the input to apply identity and affine transforms:
+\[
+\bm{z}_{1:d}' = \bm{z}_{1:d}, \qquad \bm{z}_{d+1:D}' = \bm{z}_{d+1:D} \odot \exp(s) + t
+\]
+The Jacobian is triangular, so $\det J = \exp(\sum s)$. RealNVP uses checkerboard and channel masking.
+
+\textbf{Glow:} Extends RealNVP by incorporating invertible $1\times1$ convolutions as a generalization of permutation layers. Flows can also serve as highly expressive priors for VAEs.
+
+\section*{Week 3: Diffusion Models}
+
+\textbf{Forward Process:} A Markov chain gradually corrupts data into noise:
+\[
+q(\bm{z}_t|\bm{z}_{t-1}) = \mathcal{N}(\bm{z}_t;\, \sqrt{1-\beta_t}\,\bm{z}_{t-1},\, \beta_t \bm{I})
+\]
+The marginal is $q(\bm{z}_t|\bm{x}_0) = \mathcal{N}(\bm{z}_t;\, \sqrt{\bar{\alpha}_t}\,\bm{x}_0,\, (1-\bar{\alpha}_t)\bm{I})$.
+
+\textbf{Reverse Process:} A neural network (often a U-Net) approximates the denoising step:
+\[
+p(\bm{z}_{t-1}|\bm{z}_t) = \mathcal{N}(\bm{z}_{t-1};\, \bm{\mu}_\theta,\, \bm{\Sigma}_\theta)
+\]
+
+\textbf{DDPM Loss:} The ELBO simplifies to predicting the noise $\bm{\epsilon}$ via MSE:
+\[
+\mathcal{L}_{\text{simple}} = \mathbb{E}_{\bm{\epsilon}, t}\bigl[\|\bm{\epsilon} - \bm{\epsilon}_\theta(\bm{z}_t(\bm{x}_0, \bm{\epsilon}), t)\|^2\bigr]
+\]
+
+\textbf{Continuous SDEs:} Modeled as $d\bm{x} = f(\bm{x},t)\,dt + g(t)\,d\bm{w}$. Reversing requires the score $\nabla_{\bm{x}} \log p_t(\bm{x})$, learned via denoising score matching. Variance Preserving (VP) SDEs use a linear noise schedule $\beta(t)$.
+
+\textbf{Latent Diffusion:} Computations scale better by first projecting data into a low-dimensional VAE latent space before running the diffusion process.
+
+\section*{Week 5: Representation Invariance}
+
+\textbf{Identifiability:} Too much flexibility in neural network decoders means latent representations can be reparameterized without changing the model fit, leading to unstable or unidentifiable representations.
+
+\textbf{Noisy Manifolds:} Observations are modeled as an immersed manifold plus noise:
+\[
+\bm{x} = \bm{W}f(\bm{z}) + \bm{\epsilon}
+\]
+where $\bm{W}$ is interpreted as a random projection.
+
+\textbf{Ensembles:} Capturing model uncertainty (e.g., using multiple randomly initialized decoders) is vital for understanding topology. Well-calibrated uncertainty builds a ``wall'' around the data so that geodesic curves naturally follow the data's topological structure.
+
+\section*{Week 6: Riemannian Metrics}
+
+\textbf{Riemannian Geometry:} A deterministic decoder $f: \mathbb{R}^d \to \mathbb{R}^D$ immerses a manifold in observation space. Locally, distances and angles in the tangent space are defined by the pull-back Riemannian metric:
+\[
+\bm{M}_z = J_f(\bm{z})^\top J_f(\bm{z})
+\]
+
+\textbf{Curve Energy \& Geodesics:} The energy of a curve $\gamma$ is:
+\[
+E[\gamma] = \int_0^1 \gamma'(t)^\top \bm{M}_{\gamma(t)} \gamma'(t)\, dt
+\]
+Shortest paths (geodesics) minimize this energy.
+
+\textbf{Optimization:} Constant-speed geodesics follow a 2nd-order ODE, providing a principled way to generalize addition and subtraction on the learned manifold.
+
+\section*{Week 7: Information Geometry \& Parameter Manifolds}
+
+\textbf{Information Geometry:} Treats the decoder as mapping to the space of conditional distributions $p(\bm{x}|\bm{z})$ rather than directly to observation space. Distances are measured using the KL divergence, which is invariant to parameterization choices.
+
+\textbf{Parameter Manifolds:} The framework extends to any neural network parameter. Network weights can be treated as latent variables; their geometry (metric) is evaluated by measuring the change in network predictions on the training data. Sampling in parameter space using this geometry allows samples to interpolate the data perfectly.
+
+\section*{Week 9: Graphs \& Node Embeddings}
+
+\textbf{Graph Basics:} A simple graph is $G=(V,E)$. Laplacians capture structural properties:
+\[
+\text{Unnormalized: } \bm{L} = \bm{D} - \bm{A}, \qquad \text{Random Walk: } \bm{L}_{rw} = \bm{I} - \bm{D}^{-1}\bm{A}
+\]
+The Weisfeiler-Lehman test checks graph isomorphism by iteratively hashing the multi-set of neighborhood labels.
+
+\textbf{Node Embeddings:} The encoder maps nodes to vectors (e.g., shallow embedding $\bm{z}_u = \bm{s}_u^\top \bm{Z}$). The decoder computes a node-pair statistic such as dot product $\bm{z}_u^\top \bm{z}_v$, squared distance, or sigmoid probability.
+
+\textbf{Losses:} Optimization minimizes discrepancies like MSE $(\|\bm{S} - \bm{Z}\bm{Z}^\top\|_F^2)$, binary cross-entropy, or uses random walks with negative sampling.
+
+\section*{Week 10: Graph Neural Networks}
+
+\textbf{Message Passing:} State updates are order-invariant:
+\[
+\bm{h}_u^{(k+1)} = \text{update}\!\left(\bm{h}_u^{(k)},\; \text{agg}\!\left(\{\bm{h}_v^{(k)} \mid v \in \mathcal{N}(u)\}\right)\right)
+\]
+
+\textbf{Aggregation:} Must be permutation invariant (e.g., sum, mean). Common approaches include set pooling, Janossy pooling (averaging over randomized permutations), and Transformer-style attention:
+\[
+\alpha_{u,v} \propto \exp\!\left(\bm{h}_u^\top \bm{W} \bm{h}_v\right)
+\]
+
+\textbf{Updates:} Concatenation, residual skip-connections, or GRU-based gating help combat over-smoothing in deep networks.
+
+\textbf{Geometric GNNs:} Physical symmetries (translation and rotation) are handled via invariant/equivariant operations on separate scalar and vector features.
+
+\section*{Week 11: Graph Theory \& Generative Graph Models}
+
+\textbf{Graph Convolutions:} A graph convolution uses the adjacency matrix $\bm{A}$ as a neighborhood shift operator. Via the eigendecomposition $\bm{A} = \bm{U}\bm{\Lambda}\bm{U}^H$, the eigenvectors correspond to the Discrete Fourier Transform basis, enabling spectral convolutions.
+
+\textbf{Graphical Models:} Mean-field variational inference fixed-point equations are analytically similar to GNN message passing updates.
+
+\textbf{Generative Graph Models:} Classical approaches include Erd\H{o}s-R\'enyi, Stochastic Blockmodels, and Preferential Attachment. VAEs for graphs use a probabilistic encoder:
+\[
+\bm{Z} \sim \mathcal{N}(\mu(G), \Sigma(G))
+\]
+to build node-level or graph-level latent representations. Performance is evaluated by comparing distributions of graph statistics (degree, clustering coefficient) using the Total Variation (TV) distance.
+
+\end{document}
