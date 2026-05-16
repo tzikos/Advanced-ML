@@ -162,13 +162,13 @@ def main():
     args = parser.parse_args()
 
     # Build prefix from architecture choices
-    prefix = f"{args.prior}_{args.decoder}"
+    prefix = f"{args.prior}_{args.decoder}_e{args.epochs}_ld{args.latent_dim}"
     if args.decoder == 'gaussian':
         prefix += '_learnvar' if args.learn_variance else f'_fixvar{args.fixed_variance}'
     if args.prior == 'mog':
         prefix += f'_K{args.mixture_components}'
     if args.prior == 'flow':
-        prefix += f'_L{args.flow_layers}'
+        prefix += f'_L{args.flow_layers}_h{args.flow_hidden}'
 
     # Prefix output filenames
     for attr in ['model', 'samples', 'latent_plot']:

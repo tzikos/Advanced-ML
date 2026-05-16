@@ -242,9 +242,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Prefix output paths with data and mask choices
+    # Prefix output paths with data, mask, and epoch choices
     import os
-    prefix = f"{args.data}_{args.mask}"
+    prefix = f"{args.data}_{args.mask}_e{args.epochs}"
     for attr in ['model', 'samples']:
         path = getattr(args, attr)
         d, name = os.path.split(path)

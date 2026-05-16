@@ -196,4 +196,6 @@ for epoch in range(epochs):
 with torch.no_grad():
     data = next(iter(test_loader))
     out = model(data.x, data.edge_index, data.batch).cpu()
-    torch.save(out, 'test_predictions.pt')
+    output_path = f'test_predictions_fl{filter_length}_e{epochs}.pt'
+    torch.save(out, output_path)
+    print(f"Saved predictions to {output_path}")

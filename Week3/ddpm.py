@@ -193,15 +193,15 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    def add_suffix(path, data_name, arch_name):
+    def add_suffix(path, data_name, arch_name, epochs):
         root, ext = os.path.splitext(path)
-        suffix = f"_{data_name}_{arch_name}"
+        suffix = f"_{data_name}_{arch_name}_e{epochs}"
         if root.endswith(suffix):
             return path
         return f"{root}{suffix}{ext}"
 
-    args.model = add_suffix(args.model, args.data, args.arch)
-    args.samples = add_suffix(args.samples, args.data, args.arch)
+    args.model = add_suffix(args.model, args.data, args.arch, args.epochs)
+    args.samples = add_suffix(args.samples, args.data, args.arch, args.epochs)
 
     print('# Options')
     for key, value in sorted(vars(args).items()):

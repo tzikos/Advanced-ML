@@ -74,4 +74,6 @@ for i in (progress_bar := tqdm(range(max_step))):
 
 # %% Save final estimated link probabilities
 link_probability = model(idx_all_pairs[0], idx_all_pairs[1])
-torch.save(link_probability, 'link_probability.pt')
+output_path = f'link_probability_emb{embedding_dim}_steps{max_step}.pt'
+torch.save(link_probability, output_path)
+print(f"Saved link probabilities to {output_path}")
