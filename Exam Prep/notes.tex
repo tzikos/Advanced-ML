@@ -9,6 +9,7 @@
 \setlength{\parskip}{6pt}
 
 \titlespacing*{\section}{0pt}{16pt}{6pt}
+\titlespacing*{\subsection}{0pt}{10pt}{4pt}
 
 \begin{document}
 
@@ -16,9 +17,22 @@
 
 \textbf{Generative Models:} The decoder $f_\theta: \mathcal{Z} \to \mathcal{H}$ transforms latent representations into parameters of the output density $\eta = f_\theta(\bm{z})$. Output densities depend on data type (e.g., Categorical for images, Gaussian for continuous data).
 
+\textbf{PPCA:} The model is $p(\bm{x}|\bm{z}) = \mathcal{N}(\bm{x}|\bm{W}\bm{z} + \bm{b}, \sigma^2 \bm{I})$. The MLE of $\bm{b}$ is the sample mean $\hat{\bm{b}} = \bar{\bm{x}}$. This follows from setting $\partial \ell / \partial \bm{b} = 0$, which gives $N\bm{C}^{-1}(\bm{b} - \bar{\bm{x}}) = \bm{0}$, and since $\bm{C}^{-1}$ is full rank, $\bm{b} = \bar{\bm{x}}$.
+
 \textbf{VAEs \& ELBO:} Models are learned via amortized variational inference by optimizing the Evidence Lower Bound:
 \[
 \mathcal{L}(\theta, \phi) = \mathbb{E}_{\bm{z}\sim q_\phi(\bm{z}|\bm{x})}[\log p_\theta(\bm{x}|\bm{z})] - KL(q_\phi(\bm{z}|\bm{x}) \,||\, p(\bm{z}))
+\]
+The second term equals $\mathbb{E}_{q_\phi}[\log q_\phi(\bm{z}|\bm{x}) - \log p(\bm{z})]$ by the definition of KL divergence.
+
+\textbf{KL Divergence (Closed Form):} For two univariate Gaussians:
+\[
+KL[\mathcal{N}(\mu_1, \sigma_1^2) \,||\, \mathcal{N}(\mu_2, \sigma_2^2)] = \ln\frac{\sigma_2}{\sigma_1} + \frac{\sigma_1^2 + (\mu_1 - \mu_2)^2}{2\sigma_2^2} - \frac{1}{2}
+\]
+
+\textbf{Hierarchical VAE ELBO:} For a two-level model with $Q(\bm{z}_1, \bm{z}_2|\bm{x}) = q(\bm{z}_2|\bm{z}_1)q(\bm{z}_1|\bm{x})$, applying Jensen's inequality and factoring the joint:
+\[
+\text{ELBO}(\bm{x}) = \mathbb{E}_{Q}\!\left[\log p(\bm{x}|\bm{z}_1) - \ln\frac{q(\bm{z}_1|\bm{x})}{p(\bm{z}_1|\bm{z}_2)} - KL[q(\bm{z}_2|\bm{z}_1) \,||\, p(\bm{z}_2)]\right]
 \]
 
 \textbf{Priors \& Posterior Collapse:} The standard Gaussian prior can cause posterior collapse. Better priors include Mixture of Gaussians (MoG) or VampPrior, a mixture of approximate posteriors:
@@ -33,19 +47,28 @@ Shared decoders in hierarchical VAEs also help prevent posterior collapse.
 \[
 \bm{x} = T(\bm{u}) = T_K \circ \dots \circ T_1(\bm{u})
 \]
+The inverse reverses the order: $(T_K \circ \cdots \circ T_1)^{-1} = T_1^{-1} \circ \cdots \circ T_K^{-1}$.
+
+\textbf{Volume Preservation:} A transformation $f$ is volume-preserving if $|\det \bm{J}_f| = 1$. Example: $f(\bm{x}) = -\bm{x} + \bm{a}$ has $\bm{J}_f = -\bm{I}$, so $|\det \bm{J}_f| = 1$.
+
+\textbf{Jacobian Chain Rule:} For $h = g \circ f$, we have $\bm{J}_h = \bm{J}_g \bm{J}_f$, and therefore:
+\[
+|\det \bm{J}_h| = |\det \bm{J}_g|\,|\det \bm{J}_f|
+\]
 
 \textbf{Exact Likelihood:} Density is computed using the change of variables formula:
 \[
 p_x(\bm{x}) = p_u(\bm{u}) \,|\det J_T(\bm{u})|^{-1}
 \]
+For a composition of $K$ flows, $\log p_x(\bm{x}) = \log p_u(\bm{u}) - \sum_{k=1}^K \log|\det \bm{J}_{T_k}|$.
 
 \textbf{Dequantization:} To apply continuous flows to discrete data, uniform noise is added: $\bm{x}' = \bm{x} + \bm{u}$, where $\bm{u} \sim \mathcal{U}(-0.5, 0.5)$.
 
-\textbf{Affine Coupling (RealNVP):} Partitions the input to apply identity and affine transforms:
+\textbf{Masked Coupling Layer (RealNVP):} Uses binary mask $\bm{b} \in \{0,1\}^D$. Forward:
 \[
-\bm{z}_{1:d}' = \bm{z}_{1:d}, \qquad \bm{z}_{d+1:D}' = \bm{z}_{d+1:D} \odot \exp(s) + t
+\bm{z}' = \bm{b} \odot \bm{z} + (1-\bm{b}) \odot \bigl(\bm{z} \odot \exp(s(\bm{b}\odot\bm{z})) + t(\bm{b}\odot\bm{z})\bigr)
 \]
-The Jacobian is triangular, so $\det J = \exp(\sum s)$. RealNVP uses checkerboard and channel masking.
+Inverse: $\bm{z} = \bm{b} \odot \bm{z}' + (1-\bm{b}) \odot \bigl((\bm{z}' - t(\bm{b}\odot\bm{z}'))\odot\exp(-s(\bm{b}\odot\bm{z}'))\bigr)$. Log-determinant: $\sum_d (1-b_d)\,s_d(\bm{b}\odot\bm{z})$. The Jacobian is triangular, so $\det J = \exp(\sum s)$. RealNVP uses checkerboard and channel masking.
 
 \textbf{Glow:} Extends RealNVP by incorporating invertible $1\times1$ convolutions as a generalization of permutation layers. Flows can also serve as highly expressive priors for VAEs.
 
@@ -55,14 +78,30 @@ The Jacobian is triangular, so $\det J = \exp(\sum s)$. RealNVP uses checkerboar
 \[
 q(\bm{z}_t|\bm{z}_{t-1}) = \mathcal{N}(\bm{z}_t;\, \sqrt{1-\beta_t}\,\bm{z}_{t-1},\, \beta_t \bm{I})
 \]
-The marginal is $q(\bm{z}_t|\bm{x}_0) = \mathcal{N}(\bm{z}_t;\, \sqrt{\bar{\alpha}_t}\,\bm{x}_0,\, (1-\bar{\alpha}_t)\bm{I})$.
+The marginal is $q(\bm{z}_t|\bm{x}_0) = \mathcal{N}(\bm{z}_t;\, \sqrt{\bar{\alpha}_t}\,\bm{x}_0,\, (1-\bar{\alpha}_t)\bm{I})$, where $\bar{\alpha}_t = \prod_{s=1}^t (1-\beta_s)$.
+
+\textbf{Convergence to Pure Noise:} For any schedule $0 < \beta_1 < \cdots < \beta_T < 1$:
+\[
+\bar{\alpha}_T < (1-\beta_1)^T \to 0 \text{ as } T\to\infty \implies q(\bm{z}_T|\bm{x}) \to \mathcal{N}(\bm{0}, \bm{I})
+\]
 
 \textbf{Reverse Process:} A neural network (often a U-Net) approximates the denoising step:
 \[
 p(\bm{z}_{t-1}|\bm{z}_t) = \mathcal{N}(\bm{z}_{t-1};\, \bm{\mu}_\theta,\, \bm{\Sigma}_\theta)
 \]
 
-\textbf{DDPM Loss:} The ELBO simplifies to predicting the noise $\bm{\epsilon}$ via MSE:
+\textbf{ELBO Decomposition:} The DDPM ELBO decomposes as:
+\[
+L = KL[q(\bm{z}_T|\bm{x}) \,||\, p(\bm{z}_T)] - \log p(\bm{x}|\bm{z}_1) + \sum_{t=2}^T KL[q(\bm{z}_{t-1}|\bm{z}_t,\bm{x}) \,||\, p(\bm{z}_{t-1}|\bm{z}_t)]
+\]
+
+\textbf{$L_{t-1}$ Simplification:} Each KL term reduces to a mean-matching objective. Since both $q(\bm{z}_{t-1}|\bm{z}_t,\bm{x})$ and $p(\bm{z}_{t-1}|\bm{z}_t)$ are Gaussians with isotropic covariance:
+\[
+L_{t-1} = \frac{1}{2\sigma_t^2}\bigl\|\tilde{\bm{\mu}}(\bm{z}_t, \bm{x}) - \bm{\mu}_\theta(\bm{z}_t, t)\bigr\|^2 + C
+\]
+where $C$ does not depend on $\theta$.
+
+\textbf{DDPM Loss:} The ELBO further simplifies to predicting the noise $\bm{\epsilon}$ via MSE:
 \[
 \mathcal{L}_{\text{simple}} = \mathbb{E}_{\bm{\epsilon}, t}\bigl[\|\bm{\epsilon} - \bm{\epsilon}_\theta(\bm{z}_t(\bm{x}_0, \bm{\epsilon}), t)\|^2\bigr]
 \]
@@ -72,6 +111,20 @@ p(\bm{z}_{t-1}|\bm{z}_t) = \mathcal{N}(\bm{z}_{t-1};\, \bm{\mu}_\theta,\, \bm{\S
 \textbf{Latent Diffusion:} Computations scale better by first projecting data into a low-dimensional VAE latent space before running the diffusion process.
 
 \section*{Week 5: Representation Invariance}
+
+\textbf{Rotation Invariance of PPCA:} If $\hat{\bm{x}} = \bm{R}\bm{x}$ for rotation matrix $\bm{R}$ (i.e.\ $\bm{R}^\top\bm{R} = \bm{I}$), then:
+\[
+\|\hat{\bm{x}}_i - \hat{\bm{x}}_j\| = \|\bm{R}(\bm{x}_i - \bm{x}_j)\| = \sqrt{(\bm{x}_i-\bm{x}_j)^\top \bm{R}^\top\bm{R}(\bm{x}_i-\bm{x}_j)} = \|\bm{x}_i - \bm{x}_j\|
+\]
+Angles are also preserved since $\langle \bm{R}\bm{u}, \bm{R}\bm{v}\rangle = \bm{u}^\top\bm{R}^\top\bm{R}\bm{v} = \langle\bm{u},\bm{v}\rangle$.
+
+\textbf{Immersed vs.\ Embedded Manifolds:} A smooth map $f: \mathbb{R}^d \to \mathbb{R}^D$ spans an \emph{immersed} manifold if $\bm{J}_f(\bm{z})$ is full rank for all $\bm{z}$ (i.e.\ columns of $\bm{J}$ are linearly independent). It spans an \emph{embedded} manifold if additionally $f$ is injective (has a left-inverse), ensuring no self-intersections.
+
+\textbf{Curve Length:} For a curve $c: [0,1] \to \mathbb{R}^D$, the Euclidean length is:
+\[
+\text{length}(c) = \int_0^1 \|\dot{c}(t)\|\, dt
+\]
+The speed function is $\|\dot{c}(t)\|$. Numerically, approximate by $\sum_{i} \|c(t_{i+1}) - c(t_i)\|$.
 
 \textbf{Identifiability:} Too much flexibility in neural network decoders means latent representations can be reparameterized without changing the model fit, leading to unstable or unidentifiable representations.
 
@@ -83,58 +136,126 @@ where $\bm{W}$ is interpreted as a random projection.
 
 \textbf{Ensembles:} Capturing model uncertainty (e.g., using multiple randomly initialized decoders) is vital for understanding topology. Well-calibrated uncertainty builds a ``wall'' around the data so that geodesic curves naturally follow the data's topological structure.
 
-\section*{Week 6: Riemannian Metrics}
+\section*{Week 6: Riemannian Metrics \& Geodesics}
 
-\textbf{Riemannian Geometry:} A deterministic decoder $f: \mathbb{R}^d \to \mathbb{R}^D$ immerses a manifold in observation space. Locally, distances and angles in the tangent space are defined by the pull-back Riemannian metric:
+\textbf{Riemannian Geometry:} A deterministic decoder $f: \mathbb{R}^d \to \mathbb{R}^D$ immerses a manifold in observation space. The pull-back Riemannian metric is:
 \[
-\bm{M}_z = J_f(\bm{z})^\top J_f(\bm{z})
+\bm{G}_z = \bm{J}_f(\bm{z})^\top \bm{J}_f(\bm{z})
 \]
+Local norms: $\|\bm{v}\|_{\bm{G}_z} = \sqrt{\bm{v}^\top \bm{G}_z \bm{v}}$. For $\bm{G}_z = (1+\|\bm{z}\|^2)\bm{I}$, angles are Euclidean (the scalar factor cancels), but norms depend on position.
 
 \textbf{Curve Energy \& Geodesics:} The energy of a curve $\gamma$ is:
 \[
-E[\gamma] = \int_0^1 \gamma'(t)^\top \bm{M}_{\gamma(t)} \gamma'(t)\, dt
+E[\gamma] = \int_0^1 \dot{\gamma}(t)^\top \bm{G}_{\gamma(t)}\, \dot{\gamma}(t)\, dt
 \]
-Shortest paths (geodesics) minimize this energy.
+Shortest paths (geodesics) minimize this energy. For the Euclidean metric $\bm{G} = \bm{I}$, geodesics are straight lines $c_t = (1-t)\bm{x}_1 + t\bm{x}_2$.
 
-\textbf{Optimization:} Constant-speed geodesics follow a 2nd-order ODE, providing a principled way to generalize addition and subtraction on the learned manifold.
+\textbf{Christoffel Symbols \& Geodesic ODE:} The connection coefficients are:
+\[
+\Gamma_j^{ik}(c_t) = \frac{1}{2}[\bm{G}_{c_t}^{-1}]_{ij}\left(2\frac{\partial [G_{c_t}]_{ij}}{\partial [c_t]_k} - \frac{\partial [G_{c_t}]_{jk}}{\partial [c_t]_i}\right)
+\]
+Constant-speed geodesics satisfy the 2nd-order ODE:
+\[
+[\ddot{c}_t]_j = -\sum_{i,k} \Gamma_j^{ik}(c_t)\,[\dot{c}_t]_k[\dot{c}_t]_j
+\]
+For $\bm{G} = \bm{I}$ all Christoffel symbols are zero, confirming $\ddot{c}_t = \bm{0}$ (straight lines).
+
+\textbf{Density-Based Metric:} A useful metric for data-aware geodesics is:
+\[
+\bm{G}_{\bm{x}} = \frac{1}{p(\bm{x}) + \epsilon}\,\bm{I}, \qquad p(\bm{x}) = \frac{1}{N}\sum_{n=1}^N \mathcal{N}(\bm{x}|\bm{x}_n, \sigma^2\bm{I})
+\]
+This penalizes paths leaving the data support, forcing geodesics to follow the data manifold.
 
 \section*{Week 7: Information Geometry \& Parameter Manifolds}
 
-\textbf{Information Geometry:} Treats the decoder as mapping to the space of conditional distributions $p(\bm{x}|\bm{z})$ rather than directly to observation space. Distances are measured using the KL divergence, which is invariant to parameterization choices.
+\textbf{Information Geometry:} Treats the decoder as mapping to the space of conditional distributions $p(\bm{x}|\bm{z})$ rather than directly to observation space. Distances are measured using the KL divergence, which is invariant to parameterization choices. In contrast, Euclidean distances in parameter space are not invariant---different parameterizations of the same distributions yield different distances.
 
-\textbf{Parameter Manifolds:} The framework extends to any neural network parameter. Network weights can be treated as latent variables; their geometry (metric) is evaluated by measuring the change in network predictions on the training data. Sampling in parameter space using this geometry allows samples to interpolate the data perfectly.
+\textbf{Randomly Projected Manifold:} For a stochastic decoder $h(\bm{x}) = (f(\bm{x}), \sigma(\bm{x}))^\top$ mapping to $\mathbb{R}^{2D}$, the pullback metric combines both mean and variance Jacobians:
+\[
+\bm{G}_h = \bm{J}_f^\top \bm{J}_f + \bm{J}_\sigma^\top \bm{J}_\sigma
+\]
+
+\textbf{Parametrization Non-Invariance:} For $\mathcal{N}_1 = \mathcal{N}(0,1)$ and $\mathcal{N}_2 = \mathcal{N}(1,4)$, the Euclidean distance depends on the chosen parametrization: $\|(\mu,\sigma)\| = \sqrt{2}$, $\|(\mu,\sigma^2)\| = \sqrt{10}$, etc. The KL-based (Fisher information) metric is parametrization-invariant.
+
+\textbf{ReLU Network Non-Identifiability:} For the network $f(\bm{x}) = \theta_2 \text{ReLU}(\theta_1 \bm{x})$, rescaling $\theta_1 \to c\theta_1$, $\theta_2 \to \theta_2/c$ leaves the function unchanged. Two parameter vectors produce the same function if $\sum_l \log \theta_l = \sum_l \log \theta_l'$.
+
+\textbf{Parameter Manifolds:} The metric on parameter space is the finite-sample Fisher information:
+\[
+\bar{\bm{G}}_\theta = \frac{1}{N}\sum_n \bm{J}_\theta(\bm{x}_n)^\top \bm{J}_\theta(\bm{x}_n)
+\]
+Geodesics in this space connect functionally equivalent parameters, allowing the model to interpolate data perfectly.
 
 \section*{Week 9: Graphs \& Node Embeddings}
 
-\textbf{Graph Basics:} A simple graph is $G=(V,E)$. Laplacians capture structural properties:
+\textbf{Graph Basics:} A simple graph is $G=(V,E)$. Laplacians:
 \[
 \text{Unnormalized: } \bm{L} = \bm{D} - \bm{A}, \qquad \text{Random Walk: } \bm{L}_{rw} = \bm{I} - \bm{D}^{-1}\bm{A}
 \]
 The Weisfeiler-Lehman test checks graph isomorphism by iteratively hashing the multi-set of neighborhood labels.
 
-\textbf{Node Embeddings:} The encoder maps nodes to vectors (e.g., shallow embedding $\bm{z}_u = \bm{s}_u^\top \bm{Z}$). The decoder computes a node-pair statistic such as dot product $\bm{z}_u^\top \bm{z}_v$, squared distance, or sigmoid probability.
+\textbf{Node-Level Statistics:}
+\begin{itemize}
+  \item \textbf{Eigenvector centrality:} The centrality scores are the components of the principal eigenvector of $\bm{A}$ (corresponding to the largest eigenvalue). Centralities must be positive, so flip the sign if necessary.
+  \item \textbf{Clustering coefficient:} $c_u = \frac{|\{(v,w)\in E : v,w\in\mathcal{N}(u)\}|}{\binom{\deg(u)}{2}}$, the fraction of neighbor pairs that are connected.
+\end{itemize}
 
-\textbf{Losses:} Optimization minimizes discrepancies like MSE $(\|\bm{S} - \bm{Z}\bm{Z}^\top\|_F^2)$, binary cross-entropy, or uses random walks with negative sampling.
+\textbf{Random Walks:} Starting from distribution $\bm{p}$, after one step the distribution is:
+\[
+\bm{A}\bm{D}^{-1}\bm{p} = \bm{P}\bm{p}, \qquad \bm{P} = \bm{A}\bm{D}^{-1}
+\]
+The number of distinct paths of length $t$ from node $u$ is the sum of the $u$-th column of $\bm{A}^t$.
+
+\textbf{Shallow Embeddings:} The encoder maps nodes to vectors (e.g., $\bm{z}_u = \bm{s}_u^\top \bm{Z}$). A sigmoid decoder $\text{DEC}(\bm{z}_u, \bm{z}_v) = \sigma(\bm{z}_u^\top\bm{z}_v + b)$ gives the probability of an edge. Note: $1 - \sigma(x) = \sigma(-x)$. Cross-entropy loss for a single edge observation $S_{u,v} \in \{0,1\}$:
+\[
+L_{u,v} = -\bigl(S_{u,v}\log P_{u,v} + (1-S_{u,v})\log(1-P_{u,v})\bigr)
+\]
+
+\textbf{Losses:} Optimization also minimizes MSE $(\|\bm{S} - \bm{Z}\bm{Z}^\top\|_F^2)$ or uses random walks with negative sampling.
 
 \section*{Week 10: Graph Neural Networks}
+
+\textbf{Permutation Invariance:} Aggregation functions must be permutation invariant. Sum, product, and maximum are permutation invariant; concatenation is not.
 
 \textbf{Message Passing:} State updates are order-invariant:
 \[
 \bm{h}_u^{(k+1)} = \text{update}\!\left(\bm{h}_u^{(k)},\; \text{agg}\!\left(\{\bm{h}_v^{(k)} \mid v \in \mathcal{N}(u)\}\right)\right)
 \]
 
-\textbf{Aggregation:} Must be permutation invariant (e.g., sum, mean). Common approaches include set pooling, Janossy pooling (averaging over randomized permutations), and Transformer-style attention:
+\textbf{Power Iteration GNN:} A GNN with aggregate $= \sum_{v\in\mathcal{N}(u)} h_v^{(k)}$ and update $= m_{\mathcal{N}(u)}^{(k)} / \|\bm{A}\bm{h}^{(k)}\|$ implements power iteration:
+\[
+\bm{h}^{(k+1)} = \frac{\bm{A}\bm{h}^{(k)}}{\|\bm{A}\bm{h}^{(k)}\|}
+\]
+This converges (under mild conditions) to the dominant eigenvector of $\bm{A}$, i.e., it computes \textbf{eigenvector centrality}.
+
+\textbf{Aggregation:} Common approaches include set pooling, Janossy pooling (averaging over randomized permutations), and Transformer-style attention:
 \[
 \alpha_{u,v} \propto \exp\!\left(\bm{h}_u^\top \bm{W} \bm{h}_v\right)
 \]
 
-\textbf{Updates:} Concatenation, residual skip-connections, or GRU-based gating help combat over-smoothing in deep networks.
+\textbf{Updates \& Parameter Counting:} Concatenation, residual skip-connections (adding the update to the previous state), or GRU-based gating help combat over-smoothing. For a basic GNN with state dimension $D$, the parameters per round are $\bm{W}_\text{self} \in \mathbb{R}^{D\times D}$, $\bm{W}_\text{neigh} \in \mathbb{R}^{D\times D}$, $\bm{b} \in \mathbb{R}^D$: total $(2D^2 + D) \times K$ parameters for $K$ rounds (independent of graph size).
 
 \textbf{Geometric GNNs:} Physical symmetries (translation and rotation) are handled via invariant/equivariant operations on separate scalar and vector features.
 
 \section*{Week 11: Graph Theory \& Generative Graph Models}
 
-\textbf{Graph Convolutions:} A graph convolution uses the adjacency matrix $\bm{A}$ as a neighborhood shift operator. Via the eigendecomposition $\bm{A} = \bm{U}\bm{\Lambda}\bm{U}^H$, the eigenvectors correspond to the Discrete Fourier Transform basis, enabling spectral convolutions.
+\textbf{Discrete Convolution \& Shift Operator:} A discrete-time convolution is $y[n] = \sum_k x[k]h[n-k]$. The unit delay operator $D$ shifts a signal: $Dx[n] = x[n-1]$. A causal filter can then be written as $y[n] = \bigl(\sum_{k=0}^\infty h[k]D^k\bigr)x[n]$.
+
+\textbf{Graph Shift Operator:} On a graph, the signal at each node spreads to neighbors at each step:
+\[
+D\bm{x}[n] = \bm{A}\bm{x}[n-1]
+\]
+Applying a finite filter $h[k]$ (nonzero for $0 \le k \le N$) to a constant signal $\bm{x}$ gives the graph convolution:
+\[
+\bm{y} = \sum_{k=0}^{N} h[k]\,\bm{A}^k\bm{x}
+\]
+
+\textbf{Graph Fourier Transform (GFT):} For the cycle graph with $N$ nodes, the vector $\bm{u}_k$ with components $(\bm{u}_k)_n = e^{-i\frac{2\pi k}{N}n}$ is an eigenvector of $\bm{A}$ with eigenvalue $\lambda_k = 2\cos(2\pi k / N)$. Thus the DFT basis equals the graph eigenbasis. For any graph with eigendecomposition $\bm{A} = \bm{U}\bm{\Lambda}\bm{U}^*$, the GFT is $\tilde{\bm{x}} = \bm{U}^*\bm{x}$ and the inverse is $\bm{x} = \bm{U}\tilde{\bm{x}}$.
+
+\textbf{Spectral Convolution:} In the spectral domain, the graph convolution becomes:
+\[
+\tilde{\bm{y}} = \sum_{k=0}^N h[k]\,\bm{\Lambda}^k\tilde{\bm{x}}, \qquad \text{equivalently} \qquad \bm{y} = \bm{U}\!\left(\sum_{k=0}^N h[k]\,\bm{\Lambda}^k\right)\!\bm{U}^*\bm{x}
+\]
+Both vertex-domain and spectral-domain approaches give identical results. Vertex-domain requires $N$ matrix-vector products $O(|V|^2)$; spectral-domain requires one eigendecomposition $O(|V|^3)$ that can be precomputed.
 
 \textbf{Graphical Models:} Mean-field variational inference fixed-point equations are analytically similar to GNN message passing updates.
 
