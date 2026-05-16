@@ -1,4 +1,30 @@
-# Week 10 — Graph Neural Network Architecture (MUTAG Classification)
+# Week 10 — Graph Neural Network (MUTAG Classification)
+
+Scripts: `gnn_graph_classification.py` (main exercise), `tune_gnn_optuna.py` (hyperparameter tuning), and `week10_exercises.ipynb` (notebook).
+
+Run all commands from the **project root**.
+
+## Run the main script
+
+```bash
+uv run Week10/gnn_graph_classification.py
+```
+
+## Run hyperparameter tuning (Optuna)
+
+```bash
+uv run Week10/tune_gnn_optuna.py --trials 40 --device cpu --save-model
+```
+
+## Run the notebook
+
+```bash
+uv run jupyter notebook Week10/week10_exercises.ipynb
+```
+
+Or open `week10_exercises.ipynb` directly in VS Code.
+
+---
 
 This diagram is based on the `SimpleGNN` class in `gnn_graph_classification.py`, using the components from `__init__` and the computation in `forward`.
 
